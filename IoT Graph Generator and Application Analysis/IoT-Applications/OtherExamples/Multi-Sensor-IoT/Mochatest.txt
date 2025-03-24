@@ -1,0 +1,54 @@
+const sinon = require('sinon');
+const assert = require('chai').assert;
+const { MongoClient } = require("mongodb");
+
+// Import the original function
+const app = require('./app'); // Assuming the original code is in app.js
+
+describe('Order Preservation in Notification System', function () {
+    let clientStub, collectionStub, notificationsCollectionStub;
+
+    beforeEach(function () {
+        // Stub the MongoDB client connection and collection
+        clientStub = sinon.stub(MongoClient.prototype, 'connect').resolves();
+        collectionStub = sinon.stub(MongoClient.prototype, 'db').returns({
+            collection: sinon.stub().returns({
+                find: sinon.stub().returns({
+                    toArray: sinon.stub().resolves([{
+                        roomData: {
+                            person_detector: 'no',
+                            AC_status: 'on',
+                            room_door: 'close'
+                        }
+                    }, {
+                        roomData: {
+                            person_detector: 'yes',
+                            AC_status: 'on',
+                            room_door: 'open'
+                        }
+                    }])
+                }),
+                insertOne: sinon.spy() // Spy to track the order of inserts
+            })
+        });
+        notificationsCollectionStub = collectionStub().collection(); // Mock notifications collection
+    });
+
+    afterEach(function () {
+        sinon.restore(); // Restore the original functions after each test
+    });
+
+    it('should preserve order of notifications', async function () {
+        await app.main(); // Run the main function
+        
+        // Check the order of notifications inserted into the database
+        assert(notificationsCollectionStub.insertOne.calledTwice, 'Notifications should be inserted twice');
+        
+        // Check the messages inserted
+        const firstInsert = notificationsCollectionStub.insertOne.getCall(0).args[0];
+        const secondInsert = notificationsCollectionStub.insertOne.getCall(1).args[0];
+
+        assert.equal(firstInsert.message, 'Alert: Open door & switch off AC to save power', 'First message should match');
+        assert.equal(secondInsert.message, 'Close the door', 'Second message should match');
+    });
+});

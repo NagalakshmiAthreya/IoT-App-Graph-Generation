@@ -1,0 +1,64 @@
+const assert = require('assert');
+const AWSMock = require('aws-sdk-mock');
+const AWS = require('aws-sdk');
+
+// Import the Lambda handlers (assuming they are in separate files)
+const L1 = require('../L1');
+const L2 = require('../L2');
+const L3 = require('../L3');
+const L4 = require('../L4');
+
+// Mock DynamoDB and SNS
+AWSMock.mock('DynamoDB.DocumentClient', 'update', (params, callback) => {
+    callback(null, { Attributes: { ...params.Key, ...params.UpdateExpression } });
+});
+
+AWSMock.mock('DynamoDB.DocumentClient', 'get', (params, callback) => {
+    if (params.TableName === 'CompletionStatusTable') {
+        // Simulate both L1 and L2 being complete
+        callback(null, { Item: { L1Status: 'Complete', L2Status: 'Complete' } });
+    } else if (params.TableName === 'AlertStatusTable') {
+        // Simulate alert status data
+        callback(null, { Item: { TemperatureAlert: 'High', PressureAlert: 'High' } });
+    }
+});
+
+AWSMock.mock('SNS', 'publish', (params, callback) => {
+    callback(null, { MessageId: '12345' });
+});
+
+describe('IoT Application Destination Reachability Test', function () {
+    it('should trigger L3 after L1 and L2 complete, then update AlertStatusTable and trigger L4', async function () {
+        // Mock context and event for L1 and L2
+        const eventL1 = { temperature: 75 }; // Example temperature reading for L1
+        const eventL2 = { pressure: 1020 }; // Example pressure reading for L2
+
+        // Call L1 and L2 Lambda handlers and simulate completion
+        await L1.handler(eventL1);
+        await L2.handler(eventL2);
+
+        // Check that L3 is triggered after both L1 and L2 complete
+        const eventL3 = {};
+        const resultL3 = await L3.handler(eventL3);
+
+        // Verify that L3 checks the CompletionStatusTable
+        assert.strictEqual(resultL3.statusCode, 200, 'L3 should return a success status');
+
+        // Check if the AlertStatusTable is updated correctly
+        assert.strictEqual(resultL3.body.includes('TemperatureAlert'), true, 'TemperatureAlert should be updated');
+        assert.strictEqual(resultL3.body.includes('PressureAlert'), true, 'PressureAlert should be updated');
+
+        // Check that L4 is triggered after the AlertStatusTable update
+        const eventL4 = {};
+        const resultL4 = await L4.handler(eventL4);
+
+        // Verify that SNS is triggered correctly
+        assert.strictEqual(resultL4.statusCode, 200, 'L4 should return a success status');
+        assert.strictEqual(resultL4.body.includes('SNS message sent'), true, 'SNS should send the notification');
+    });
+
+    after(function () {
+        AWSMock.restore('DynamoDB.DocumentClient');
+        AWSMock.restore('SNS');
+    });
+});

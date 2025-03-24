@@ -1,0 +1,66 @@
+const sinon = require('sinon');
+const { expect } = require('chai');
+
+// Import the functions to be tested
+const { asyncFunction, syncFunction1, syncFunction2, syncFunction3, syncFunction4 } = require('./app'); // Adjust the path to your module
+
+describe('Order Preservation in Synchronous Functions', function () {
+  let syncFunction1Spy, syncFunction2Spy, syncFunction3Spy, syncFunction4Spy;
+
+  beforeEach(function () {
+    // Spy on the synchronous functions
+    syncFunction1Spy = sinon.spy(syncFunction1);
+    syncFunction2Spy = sinon.spy(syncFunction2);
+    syncFunction3Spy = sinon.spy(syncFunction3);
+    syncFunction4Spy = sinon.spy(syncFunction4);
+
+    // Replace the original functions with spies
+    sinon.replace(require('./app'), 'syncFunction1', syncFunction1Spy);
+    sinon.replace(require('./app'), 'syncFunction2', syncFunction2Spy);
+    sinon.replace(require('./app'), 'syncFunction3', syncFunction3Spy);
+    sinon.replace(require('./app'), 'syncFunction4', syncFunction4Spy);
+  });
+
+  afterEach(function () {
+    // Restore the original functions after each test
+    sinon.restore();
+  });
+
+  it('should execute synchronous functions in any order', async function () {
+    // Run asyncFunction for multiple clients
+    await asyncFunction(1); // Call with a single client for simplicity
+
+    // Assertions
+    expect(syncFunction1Spy.called).to.be.true;
+    expect(syncFunction2Spy.called).to.be.true;
+    expect(syncFunction3Spy.called).to.be.true;
+    expect(syncFunction4Spy.called).to.be.true;
+
+    // Check the number of calls
+    expect(syncFunction1Spy.callCount).to.be.at.least(1);
+    expect(syncFunction2Spy.callCount).to.be.at.least(1);
+    expect(syncFunction3Spy.callCount).to.be.at.least(1);
+    expect(syncFunction4Spy.callCount).to.be.at.least(1);
+
+    // Check the order of calls - they should not necessarily be in the order of the function definitions
+    const calls = [
+      syncFunction1Spy.getCalls(),
+      syncFunction2Spy.getCalls(),
+      syncFunction3Spy.getCalls(),
+      syncFunction4Spy.getCalls()
+    ].flat();
+
+    const callOrder = calls.map(call => call.callId);
+
+    // Check that the functions are called, but order is not guaranteed
+    expect(callOrder).to.have.members([
+      syncFunction1Spy.getCalls()[0].callId,
+      syncFunction2Spy.getCalls()[0].callId,
+      syncFunction3Spy.getCalls()[0].callId,
+      syncFunction4Spy.getCalls()[0].callId
+    ]);
+
+    // Ensure no specific order is guaranteed
+    expect(callOrder).to.not.deep.equal([0, 1, 2, 3]); // Assuming this is the incorrect order
+  });
+});

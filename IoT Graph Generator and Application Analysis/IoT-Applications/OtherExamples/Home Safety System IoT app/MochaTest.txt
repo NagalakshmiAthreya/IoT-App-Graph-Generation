@@ -1,0 +1,54 @@
+const sinon = require('sinon');
+const assert = require('assert');
+const mongoose = require('mongoose');
+const handleHomeSafetySystemData = require('../homeSafetySystemHandler');
+const HomeSafetySystem = mongoose.model('HomeSafetySystem');
+
+describe('HomeSafetySystem Handler - Delivery Guarantee', function () {
+    let saveStub;
+
+    beforeEach(function () {
+        // Stub the save method of HomeSafetySystem model
+        saveStub = sinon.stub(HomeSafetySystem.prototype, 'save').resolves();
+    });
+
+    afterEach(function () {
+        // Restore the original save method
+        sinon.restore();
+    });
+
+    it('should write data to MongoDB when temperature and humidity are within thresholds', async function () {
+        const testData = {
+            temperature: 86, // Fahrenheit -> 30°C after conversion
+            humidity: 60,    // Scaled to 72
+            gasLeakage: true,
+            motionDetected: false
+        };
+
+        // Call the handler with valid data
+        await handleHomeSafetySystemData(testData);
+
+        // Check that the save method was called to write data to MongoDB
+        assert(saveStub.calledOnce, 'Expected data to be written to MongoDB');
+        
+        const savedData = saveStub.getCall(0).thisValue;
+        assert.strictEqual(savedData.temperature, 30, 'Expected temperature to be normalized to Celsius');
+        assert.strictEqual(savedData.humidity, 72, 'Expected humidity to be scaled');
+        assert.strictEqual(savedData.gasLeakage, 'Yes', 'Expected gas leakage to be converted to string');
+    });
+
+    it('should skip writing to MongoDB when thresholds are exceeded', async function () {
+        const testData = {
+            temperature: 95, // Fahrenheit -> 35°C after conversion
+            humidity: 70,    // Scaled to 84
+            gasLeakage: false,
+            motionDetected: true
+        };
+
+        // Call the handler with threshold-exceeded data
+        await handleHomeSafetySystemData(testData);
+
+        // Check that the save method was not called (data should be skipped)
+        assert(saveStub.notCalled, 'Expected data to be skipped and not written to MongoDB');
+    });
+});
